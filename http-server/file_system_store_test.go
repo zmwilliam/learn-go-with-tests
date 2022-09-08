@@ -15,13 +15,17 @@ func TestFileSystemStore(t *testing.T) {
 	store, err := NewFileSystemStore(database)
 	assertNoError(t, err)
 
-	t.Run("league from a reader", func(t *testing.T) {
+	t.Run("league sorted by scores", func(t *testing.T) {
 		got := store.GetLeague()
 		want := []Player{
-			{"Cleo", 10},
 			{"Chris", 33},
+			{"Cleo", 10},
 		}
 
+		assertLeague(t, got, want)
+
+		// read again
+		got = store.GetLeague()
 		assertLeague(t, got, want)
 	})
 
