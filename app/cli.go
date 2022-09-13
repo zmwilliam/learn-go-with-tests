@@ -32,12 +32,7 @@ func (c *CLI) readLine() string {
 	return c.in.Text()
 }
 
-func NewCLI(store PlayerStore, in io.Reader, out io.Writer, alerter BlindAlerter) *CLI {
-	game := &Game{
-		store:   store,
-		alerter: alerter,
-	}
-
+func NewCLI(in io.Reader, out io.Writer, game *Game) *CLI {
 	return &CLI{
 		in:   bufio.NewScanner(in),
 		out:  out,

@@ -28,14 +28,16 @@ func (s *SpyBlindAlerter) ScheduleAlertAt(at time.Duration, amount int) {
 }
 
 var dummyStdOut = &bytes.Buffer{}
+var dummyPlayerStore = &poker.StubPlayerStore{}
+var dummySpyAlerter = &SpyBlindAlerter{}
 
 func TestCLI(t *testing.T) {
 	t.Run("it schedules printing of blind values", func(t *testing.T) {
 		in := strings.NewReader("5\nChris wins\n")
-		playerStore := &poker.StubPlayerStore{}
 		blindAlerter := &SpyBlindAlerter{}
+		game := poker.NewGame(blindAlerter, dummyPlayerStore)
 
-		cli := poker.NewCLI(playerStore, in, dummyStdOut, blindAlerter)
+		cli := poker.NewCLI(in, dummyStdOut, game)
 		cli.PlayPoker()
 
 		cases := []scheduledAlert{
@@ -64,13 +66,13 @@ func TestCLI(t *testing.T) {
 		}
 	})
 
-	var dummySpyAlerter = &SpyBlindAlerter{}
-
 	t.Run("record chris win from user input", func(t *testing.T) {
 		in := strings.NewReader("5\nChris wins\n")
 		playerStore := &poker.StubPlayerStore{}
 
-		cli := poker.NewCLI(playerStore, in, dummyStdOut, dummySpyAlerter)
+		game := poker.NewGame(dummySpyAlerter, playerStore)
+
+		cli := poker.NewCLI(in, dummyStdOut, game)
 		cli.PlayPoker()
 
 		poker.AssertPlayerWin(t, playerStore, "Chris")
@@ -80,19 +82,22 @@ func TestCLI(t *testing.T) {
 		in := strings.NewReader("5\nCleo wins\n")
 		playerStore := &poker.StubPlayerStore{}
 
-		cli := poker.NewCLI(playerStore, in, dummyStdOut, dummySpyAlerter)
+		game := poker.NewGame(dummySpyAlerter, playerStore)
+
+		cli := poker.NewCLI(in, dummyStdOut, game)
 		cli.PlayPoker()
 
 		poker.AssertPlayerWin(t, playerStore, "Cleo")
 	})
 
 	t.Run("it prompts the user to enter the number of players", func(t *testing.T) {
-		dummyPlayerStore := &poker.StubPlayerStore{}
 		in := strings.NewReader("7\n")
 		stdout := &bytes.Buffer{}
 		blindAlerter := &SpyBlindAlerter{}
 
-		cli := poker.NewCLI(dummyPlayerStore, in, stdout, blindAlerter)
+		game := poker.NewGame(blindAlerter, dummyPlayerStore)
+
+		cli := poker.NewCLI(in, stdout, game)
 		cli.PlayPoker()
 
 		got := stdout.String()
@@ -127,4 +132,8 @@ func assertScheduledAlert(t *testing.T, got, want scheduledAlert) {
 	if got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
+}
+
+func TestGame_Start(t *testing.T) {
+
 }
