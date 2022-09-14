@@ -3,99 +3,33 @@ package poker_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/zmwilliam/learn-go-with-tests/app"
 )
 
-type scheduledAlert struct {
-	at     time.Duration
-	amount int
+type GameSpy struct {
+	StartedWith  int
+	FinishedWith string
 }
 
-func (s scheduledAlert) String() string {
-	return fmt.Sprintf("%d chips at %v", s.amount, s.at)
+func (g *GameSpy) Start(numberOfPlayers int) {
+	g.StartedWith = numberOfPlayers
 }
 
-type SpyBlindAlerter struct {
-	alerts []scheduledAlert
+func (g *GameSpy) Finish(winner string) {
+	g.FinishedWith = winner
 }
-
-func (s *SpyBlindAlerter) ScheduleAlertAt(at time.Duration, amount int) {
-	s.alerts = append(s.alerts, scheduledAlert{at, amount})
-}
-
-var dummyStdOut = &bytes.Buffer{}
-var dummyPlayerStore = &poker.StubPlayerStore{}
-var dummySpyAlerter = &SpyBlindAlerter{}
 
 func TestCLI(t *testing.T) {
-	t.Run("it schedules printing of blind values", func(t *testing.T) {
-		in := strings.NewReader("5\nChris wins\n")
-		blindAlerter := &SpyBlindAlerter{}
-		game := poker.NewGame(blindAlerter, dummyPlayerStore)
+	var dummyStdOut = &bytes.Buffer{}
 
-		cli := poker.NewCLI(in, dummyStdOut, game)
-		cli.PlayPoker()
-
-		cases := []scheduledAlert{
-			{0 * time.Second, 100},
-			{10 * time.Minute, 200},
-			{20 * time.Minute, 300},
-			{30 * time.Minute, 400},
-			{40 * time.Minute, 500},
-			{50 * time.Minute, 600},
-			{60 * time.Minute, 800},
-			{70 * time.Minute, 1000},
-			{80 * time.Minute, 2000},
-			{90 * time.Minute, 4000},
-			{100 * time.Minute, 8000},
-		}
-
-		for i, want := range cases {
-			t.Run(fmt.Sprint(want), func(t *testing.T) {
-				if len(blindAlerter.alerts) <= 1 {
-					t.Fatalf("alert %d was not scheduled %v", i, blindAlerter.alerts)
-				}
-
-				got := blindAlerter.alerts[i]
-				assertScheduledAlert(t, got, want)
-			})
-		}
-	})
-
-	t.Run("record chris win from user input", func(t *testing.T) {
-		in := strings.NewReader("5\nChris wins\n")
-		playerStore := &poker.StubPlayerStore{}
-
-		game := poker.NewGame(dummySpyAlerter, playerStore)
-
-		cli := poker.NewCLI(in, dummyStdOut, game)
-		cli.PlayPoker()
-
-		poker.AssertPlayerWin(t, playerStore, "Chris")
-	})
-
-	t.Run("record cleo win from user input", func(t *testing.T) {
-		in := strings.NewReader("5\nCleo wins\n")
-		playerStore := &poker.StubPlayerStore{}
-
-		game := poker.NewGame(dummySpyAlerter, playerStore)
-
-		cli := poker.NewCLI(in, dummyStdOut, game)
-		cli.PlayPoker()
-
-		poker.AssertPlayerWin(t, playerStore, "Cleo")
-	})
-
-	t.Run("it prompts the user to enter the number of players", func(t *testing.T) {
-		in := strings.NewReader("7\n")
+	t.Run("it prompts the user to enter the number of players and starts the game", func(t *testing.T) {
 		stdout := &bytes.Buffer{}
-		blindAlerter := &SpyBlindAlerter{}
-
-		game := poker.NewGame(blindAlerter, dummyPlayerStore)
+		in := strings.NewReader("7\n")
+		game := &GameSpy{}
 
 		cli := poker.NewCLI(in, stdout, game)
 		cli.PlayPoker()
@@ -107,33 +41,49 @@ func TestCLI(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want)
 		}
 
-		cases := []scheduledAlert{
-			{0 * time.Second, 100},
-			{12 * time.Minute, 200},
-			{24 * time.Minute, 300},
-			{36 * time.Minute, 400},
+		if game.StartedWith != 7 {
+			t.Errorf("want started with 7 but got %d", game.StartedWith)
+		}
+	})
+
+	t.Run("Finish game with correct winner", func(t *testing.T) {
+		for _, winner := range []string{"Chris", "Cleo"} {
+			in := strings.NewReader(fmt.Sprintf("1\n%s wins\n", winner))
+			game := &GameSpy{}
+			cli := poker.NewCLI(in, dummyStdOut, game)
+			cli.PlayPoker()
+
+			if game.FinishedWith != winner {
+				t.Errorf("expected finish called with %s but got %q", winner, game.FinishedWith)
+			}
+		}
+	})
+
+	t.Run("Do not read beyond the first newline", func(t *testing.T) {
+		dummyAlerter := &poker.SpyBlindAlerter{}
+		dummyStore := &poker.StubPlayerStore{}
+		in := failOnEndReader{
+			t,
+			strings.NewReader("1\nChris win\nhello there"),
 		}
 
-		for i, want := range cases {
-			t.Run(fmt.Sprint(want), func(t *testing.T) {
-				if len(blindAlerter.alerts) <= 1 {
-					t.Fatalf("alert %d was not scheduled %v", i, blindAlerter.alerts)
-				}
-
-				got := blindAlerter.alerts[i]
-				assertScheduledAlert(t, got, want)
-			})
-		}
+		game := poker.NewTexasHoldem(dummyAlerter, dummyStore)
+		cli := poker.NewCLI(in, dummyStdOut, game)
+		cli.PlayPoker()
 	})
 }
 
-func assertScheduledAlert(t *testing.T, got, want scheduledAlert) {
-	t.Helper()
-	if got != want {
-		t.Errorf("got %+v, want %+v", got, want)
-	}
+type failOnEndReader struct {
+	t      *testing.T
+	reader io.Reader
 }
 
-func TestGame_Start(t *testing.T) {
+func (m failOnEndReader) Read(p []byte) (n int, err error) {
+	n, err = m.reader.Read(p)
 
+	if n == 0 || err == io.EOF {
+		m.t.Fatal("Read to the end when you should not have")
+	}
+
+	return n, err
 }
