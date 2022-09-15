@@ -13,31 +13,30 @@ func TestRecordingWinsAndRetrievingThem(t *testing.T) {
 
 	assertNoError(t, err)
 
-	server := NewPlayerServer(store)
+	server := MustCreatePlayerServer(t, store)
 
 	player := "Pepper"
 
-	server.ServeHTTP(httptest.NewRecorder(), newPostWinRequest(player))
-	server.ServeHTTP(httptest.NewRecorder(), newPostWinRequest(player))
-	server.ServeHTTP(httptest.NewRecorder(), newPostWinRequest(player))
+	server.ServeHTTP(httptest.NewRecorder(), NewPostWinRequest(player))
+	server.ServeHTTP(httptest.NewRecorder(), NewPostWinRequest(player))
+	server.ServeHTTP(httptest.NewRecorder(), NewPostWinRequest(player))
 
 	t.Run("get score", func(t *testing.T) {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, newGetScoreRequest(player))
-		assertResponseStatus(t, response.Code, http.StatusOK)
-
-		assertResponseBody(t, response.Body.String(), "3")
+		server.ServeHTTP(response, NewGetScoreRequest(player))
+		AssertResponseStatus(t, response.Code, http.StatusOK)
+		AssertResponseBody(t, response.Body.String(), "3")
 	})
 
 	t.Run("get league", func(t *testing.T) {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, newLeagueRequest())
-		assertResponseStatus(t, response.Code, http.StatusOK)
+		server.ServeHTTP(response, NewLeagueRequest())
+		AssertResponseStatus(t, response.Code, http.StatusOK)
 
-		got := getLeagueFromResponse(t, response.Body)
+		got := GetLeagueFromResponse(t, response.Body)
 		want := []Player{{"Pepper", 3}}
 
-		assertLeague(t, got, want)
+		AssertLeague(t, got, want)
 	})
 
 }
