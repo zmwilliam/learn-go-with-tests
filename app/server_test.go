@@ -1,6 +1,9 @@
 package poker_test
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,8 +11,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/zmwilliam/learn-go-with-tests/app"
+	poker "github.com/zmwilliam/learn-go-with-tests/app"
 )
+
+var dummyGame = &GameSpy{}
 
 func TestGETPlayers(t *testing.T) {
 	store := poker.StubPlayerStore{
@@ -20,10 +25,10 @@ func TestGETPlayers(t *testing.T) {
 		nil,
 		nil,
 	}
-	server := newPlayerServer(t, &store)
+	server := mustCreatePlayerServer(t, &store, dummyGame)
 
 	t.Run("return Pepper's score", func(t *testing.T) {
-		request := poker.NewGetScoreRequest("Pepper")
+		request := newGetScoreRequest("Pepper")
 		response := httptest.NewRecorder()
 
 		server.ServeHTTP(response, request)
@@ -33,7 +38,7 @@ func TestGETPlayers(t *testing.T) {
 	})
 
 	t.Run("return Floyd's score", func(t *testing.T) {
-		request := poker.NewGetScoreRequest("Floyd")
+		request := newGetScoreRequest("Floyd")
 		response := httptest.NewRecorder()
 
 		server.ServeHTTP(response, request)
@@ -43,22 +48,13 @@ func TestGETPlayers(t *testing.T) {
 	})
 
 	t.Run("returns 404 on missing players", func(t *testing.T) {
-		request := poker.NewGetScoreRequest("missing_player")
+		request := newGetScoreRequest("missing_player")
 		response := httptest.NewRecorder()
 
 		server.ServeHTTP(response, request)
 
 		poker.AssertResponseStatus(t, response.Code, http.StatusNotFound)
 	})
-}
-
-func newPlayerServer(t *testing.T, stubPlayerStore *poker.StubPlayerStore) *poker.PlayerServer {
-	server, err := poker.NewPlayerServer(stubPlayerStore)
-	if err != nil {
-		t.Fatal("problem creating player server", err)
-	}
-
-	return server
 }
 
 func TestStoreWins(t *testing.T) {
@@ -68,11 +64,11 @@ func TestStoreWins(t *testing.T) {
 		nil,
 	}
 
-	server := newPlayerServer(t, &store)
+	server := mustCreatePlayerServer(t, &store, dummyGame)
 
 	t.Run("it records wins when POST", func(t *testing.T) {
 		player_name := "Pepper"
-		request := poker.NewPostWinRequest(player_name)
+		request := newPostWinRequest(player_name)
 		response := httptest.NewRecorder()
 
 		server.ServeHTTP(response, request)
@@ -103,14 +99,14 @@ func TestLeague(t *testing.T) {
 		}
 
 		store := poker.StubPlayerStore{nil, nil, wantedLeague}
-		server := newPlayerServer(t, &store)
+		server := mustCreatePlayerServer(t, &store, dummyGame)
 
-		request := poker.NewLeagueRequest()
+		request := newLeagueRequest()
 		response := httptest.NewRecorder()
 
 		server.ServeHTTP(response, request)
 
-		got := poker.GetLeagueFromResponse(t, response.Body)
+		got := getLeagueFromResponse(t, response.Body)
 		poker.AssertResponseStatus(t, response.Code, http.StatusOK)
 		poker.AssertLeague(t, got, wantedLeague)
 		assertContentType(t, response, "application/json")
@@ -119,7 +115,7 @@ func TestLeague(t *testing.T) {
 
 func TestGame(t *testing.T) {
 	t.Run("GET /game return 200", func(t *testing.T) {
-		server := newPlayerServer(t, &poker.StubPlayerStore{})
+		server := mustCreatePlayerServer(t, &poker.StubPlayerStore{}, dummyGame)
 
 		request := newGameRequest()
 		response := httptest.NewRecorder()
@@ -128,28 +124,44 @@ func TestGame(t *testing.T) {
 		poker.AssertResponseStatus(t, response.Code, http.StatusOK)
 	})
 
-	t.Run("when we get a message over a websocket it is a winner of a game", func(t *testing.T) {
-		store := &poker.StubPlayerStore{}
+	t.Run("start a game with 3 players and declare Ruth as winner", func(t *testing.T) {
+		game := &GameSpy{}
+		dummyStore := &poker.StubPlayerStore{}
 		winner := "Ruth"
-		server := httptest.NewServer(newPlayerServer(t, store))
+		server := httptest.NewServer(mustCreatePlayerServer(t, dummyStore, game))
 		defer server.Close()
 
 		wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
-
-		ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		if err != nil {
-			t.Fatalf("could not open a ws connection on %s %v", wsURL, err)
-		}
+		ws := mustDialWS(t, wsURL)
 		defer ws.Close()
 
-		if err := ws.WriteMessage(websocket.TextMessage, []byte(winner)); err != nil {
-			t.Fatalf("could not message over ws connectino %v", err)
-		}
+		writeWSMessage(t, ws, "3")
+		writeWSMessage(t, ws, winner)
 
 		time.Sleep(10 * time.Millisecond)
-		poker.AssertPlayerWin(t, store, winner)
+		assertGameStartedWith(t, game, 3)
+		assertFinishCalledWith(t, game, winner)
 	})
 
+}
+
+func writeWSMessage(t *testing.T, ws *websocket.Conn, message string) {
+	t.Helper()
+
+	err := ws.WriteMessage(websocket.TextMessage, []byte(message))
+	if err != nil {
+		t.Fatalf("could not message over ws connectino %v", err)
+	}
+}
+
+func mustDialWS(t *testing.T, wsURL string) *websocket.Conn {
+	t.Helper()
+
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("could not open a ws connection on %s %v", wsURL, err)
+	}
+	return ws
 }
 
 func newGameRequest() *http.Request {
@@ -162,4 +174,41 @@ func assertContentType(t testing.TB, response *httptest.ResponseRecorder, want s
 	if got_content_type != want {
 		t.Errorf("response did not have content-type of %s, got %v", want, got_content_type)
 	}
+}
+
+func mustCreatePlayerServer(t *testing.T, store poker.PlayerStore, game poker.Game) *poker.PlayerServer {
+	server, err := poker.NewPlayerServer(store, game)
+	if err != nil {
+		t.Fatal("problem creating player server", err)
+	}
+
+	return server
+}
+
+func newPostWinRequest(name string) *http.Request {
+	url_path := fmt.Sprintf("/players/%s", name)
+	req, _ := http.NewRequest(http.MethodPost, url_path, nil)
+	return req
+}
+
+func newGetScoreRequest(name string) *http.Request {
+	url_path := fmt.Sprintf("/players/%s", name)
+	req, _ := http.NewRequest(http.MethodGet, url_path, nil)
+	return req
+}
+
+func newLeagueRequest() *http.Request {
+	req, _ := http.NewRequest(http.MethodGet, "/league", nil)
+	return req
+}
+
+func getLeagueFromResponse(t testing.TB, body io.Reader) (league poker.League) {
+	t.Helper()
+
+	err := json.NewDecoder(body).Decode(&league)
+	if err != nil {
+		t.Fatalf("Unable to parse response from server %q into slice of Player, '%v", body, err)
+	}
+
+	return
 }

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/websocket"
@@ -24,6 +26,7 @@ type PlayerStore interface {
 type PlayerServer struct {
 	store    PlayerStore
 	template *template.Template
+	game     Game
 	http.Handler
 }
 
@@ -34,7 +37,7 @@ var wsUpgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-func NewPlayerServer(store PlayerStore) (*PlayerServer, error) {
+func NewPlayerServer(store PlayerStore, game Game) (*PlayerServer, error) {
 	server := new(PlayerServer)
 
 	tmpl, err := template.ParseFiles("game.html")
@@ -44,6 +47,7 @@ func NewPlayerServer(store PlayerStore) (*PlayerServer, error) {
 
 	server.template = tmpl
 	server.store = store
+	server.game = game
 
 	router := http.NewServeMux()
 	router.Handle("/league", http.HandlerFunc(server.leagueHandler))
@@ -78,8 +82,13 @@ func (s *PlayerServer) gameHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *PlayerServer) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 	conn, _ := wsUpgrader.Upgrade(w, r, nil)
+
+	_, numberOfPlayersMsg, _ := conn.ReadMessage()
+	numberOfPlayers, _ := strconv.Atoi(string(numberOfPlayersMsg))
+	s.game.Start(numberOfPlayers, io.Discard) //TODO we still discanting blinds messages
+
 	_, winnerMsg, _ := conn.ReadMessage()
-	s.store.RecordWin(string(winnerMsg))
+	s.game.Finish(string(winnerMsg))
 }
 
 func (s *PlayerServer) getScore(w http.ResponseWriter, player_name string) {

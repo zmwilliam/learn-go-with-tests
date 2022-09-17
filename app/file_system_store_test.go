@@ -1,8 +1,10 @@
-package poker
+package poker_test
 
 import (
 	"os"
 	"testing"
+
+	poker "github.com/zmwilliam/learn-go-with-tests/app"
 )
 
 func TestFileSystemStore(t *testing.T) {
@@ -12,21 +14,21 @@ func TestFileSystemStore(t *testing.T) {
 
 	defer cleanDatabaseFn()
 
-	store, err := NewFileSystemStore(database)
-	assertNoError(t, err)
+	store, err := poker.NewFileSystemStore(database)
+	poker.AssertNoError(t, err)
 
 	t.Run("league sorted by scores", func(t *testing.T) {
 		got := store.GetLeague()
-		want := []Player{
+		want := []poker.Player{
 			{"Chris", 33},
 			{"Cleo", 10},
 		}
 
-		AssertLeague(t, got, want)
+		poker.AssertLeague(t, got, want)
 
 		// read again
 		got = store.GetLeague()
-		AssertLeague(t, got, want)
+		poker.AssertLeague(t, got, want)
 	})
 
 	t.Run("get player score", func(t *testing.T) {
@@ -57,9 +59,9 @@ func TestFileSystemStore(t *testing.T) {
 		database, cleanDatabaseFn := createTempFile(t, "")
 		defer cleanDatabaseFn()
 
-		_, err := NewFileSystemStore(database)
+		_, err := poker.NewFileSystemStore(database)
 
-		assertNoError(t, err)
+		poker.AssertNoError(t, err)
 	})
 }
 

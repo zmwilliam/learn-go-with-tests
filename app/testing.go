@@ -1,10 +1,8 @@
 package poker
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"reflect"
 	"testing"
 	"time"
@@ -33,7 +31,7 @@ type SpyBlindAlerter struct {
 	Alerts []ScheduledAlert
 }
 
-func (s *SpyBlindAlerter) ScheduleAlertAt(at time.Duration, amount int) {
+func (s *SpyBlindAlerter) ScheduleAlertAt(at time.Duration, amount int, to io.Writer) {
 	s.Alerts = append(s.Alerts, ScheduledAlert{at, amount})
 }
 
@@ -60,32 +58,11 @@ func AssertPlayerWin(t testing.TB, store *StubPlayerStore, winner string) {
 
 }
 
-func assertNoError(t testing.TB, err error) {
+func AssertNoError(t testing.TB, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("didn't expect an error but got one, %v", err)
 	}
-}
-
-func MustCreatePlayerServer(t *testing.T, store PlayerStore) *PlayerServer {
-	server, err := NewPlayerServer(store)
-	if err != nil {
-		t.Fatal("problem creating player server", err)
-	}
-
-	return server
-}
-
-func NewPostWinRequest(name string) *http.Request {
-	url_path := fmt.Sprintf("/players/%s", name)
-	req, _ := http.NewRequest(http.MethodPost, url_path, nil)
-	return req
-}
-
-func NewGetScoreRequest(name string) *http.Request {
-	url_path := fmt.Sprintf("/players/%s", name)
-	req, _ := http.NewRequest(http.MethodGet, url_path, nil)
-	return req
 }
 
 func AssertResponseStatus(t testing.TB, got, want int) {
@@ -110,20 +87,4 @@ func AssertLeague(t testing.TB, got, want League) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v want %v", got, want)
 	}
-}
-
-func GetLeagueFromResponse(t testing.TB, body io.Reader) (league League) {
-	t.Helper()
-
-	err := json.NewDecoder(body).Decode(&league)
-	if err != nil {
-		t.Fatalf("Unable to parse response from server %q into slice of Player, '%v", body, err)
-	}
-
-	return
-}
-
-func NewLeagueRequest() *http.Request {
-	req, _ := http.NewRequest(http.MethodGet, "/league", nil)
-	return req
 }
