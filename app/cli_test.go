@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zmwilliam/learn-go-with-tests/app"
 )
@@ -105,7 +106,11 @@ func TestCLI(t *testing.T) {
 func assertFinishCalledWith(t *testing.T, game *GameSpy, wantedWinner string) {
 	t.Helper()
 
-	if game.FinishedWith != wantedWinner {
+	passed := retryUntil(500*time.Millisecond, func() bool {
+		return game.FinishedWith == wantedWinner
+	})
+
+	if !passed {
 		t.Errorf("expected finish called with %q but got %q", wantedWinner, game.FinishedWith)
 	}
 }
@@ -113,7 +118,11 @@ func assertFinishCalledWith(t *testing.T, game *GameSpy, wantedWinner string) {
 func assertGameStartedWith(t *testing.T, game *GameSpy, numberOfPlayersWanted int) {
 	t.Helper()
 
-	if game.StartedWith != numberOfPlayersWanted {
+	passed := retryUntil(500*time.Millisecond, func() bool {
+		return game.StartedWith == numberOfPlayersWanted
+	})
+
+	if !passed {
 		t.Errorf("expcted Start called with %d but got %d ", numberOfPlayersWanted, game.StartedWith)
 	}
 }
@@ -144,4 +153,14 @@ func (m failOnEndReader) Read(p []byte) (n int, err error) {
 	}
 
 	return n, err
+}
+
+func retryUntil(d time.Duration, f func() bool) bool {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if f() {
+			return true
+		}
+	}
+	return false
 }
