@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -81,14 +80,14 @@ func (s *PlayerServer) gameHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *PlayerServer) webSocketHandler(w http.ResponseWriter, r *http.Request) {
-	conn, _ := wsUpgrader.Upgrade(w, r, nil)
+	ws := newPlayerServerWS(w, r)
 
-	_, numberOfPlayersMsg, _ := conn.ReadMessage()
-	numberOfPlayers, _ := strconv.Atoi(string(numberOfPlayersMsg))
-	s.game.Start(numberOfPlayers, io.Discard) //TODO we still discanting blinds messages
+	numberOfPlayersMsg := ws.WaitForMsg()
+	numberOfPlayers, _ := strconv.Atoi(numberOfPlayersMsg)
+	s.game.Start(numberOfPlayers, ws)
 
-	_, winnerMsg, _ := conn.ReadMessage()
-	s.game.Finish(string(winnerMsg))
+	winnerMsg := ws.WaitForMsg()
+	s.game.Finish(winnerMsg)
 }
 
 func (s *PlayerServer) getScore(w http.ResponseWriter, player_name string) {
